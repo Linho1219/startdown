@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/StartDown.Core/StartDown.Core.csproj" />
+    <Project Path="src/StartDown/StartDown.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/StartDown.Core.Tests/StartDown.Core.Tests.csproj" />
+    <Project Path="tests/StartDown.IntegrationTests/StartDown.IntegrationTests.csproj" />
+    <Project Path="tests/StartDown.WindowFixture/StartDown.WindowFixture.csproj" />
+  </Folder>
+</Solution>
