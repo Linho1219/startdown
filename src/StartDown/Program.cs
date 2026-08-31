@@ -12,6 +12,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        Application.SetColorMode(SystemColorMode.System);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
         using var logger = new AppLogger();
