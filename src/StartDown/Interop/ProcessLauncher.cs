@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using StartDown.Core;
 
 namespace StartDown.Interop;
 
@@ -14,6 +15,29 @@ public sealed class ProcessLauncher
     private const int ErrorFileNotFound = 2;
     private const int ErrorAccessDenied = 5;
     private const int ErrorInvalidParameter = 87;
+
+    private readonly ApplicationActivationManager _applicationActivationManager = new();
+    private readonly ApplicationUserModelIdResolver _applicationUserModelIdResolver = new();
+
+    public ProcessLaunchResult Launch(LaunchEntry entry)
+    {
+        if (entry is null)
+        {
+            return Failure(ErrorInvalidParameter, "A launch entry is required.");
+        }
+
+        return entry.LaunchKind switch
+        {
+            LaunchKind.Executable => Launch(
+                entry.ExecutablePath,
+                entry.Arguments,
+                entry.WorkingDirectory),
+            LaunchKind.ApplicationUserModelId => _applicationActivationManager.Activate(
+                entry.ApplicationUserModelId,
+                entry.Arguments),
+            _ => Failure(ErrorInvalidParameter, "The launch kind is not supported."),
+        };
+    }
 
     public ProcessLaunchResult Launch(
         string executablePath,
@@ -89,6 +113,58 @@ public sealed class ProcessLauncher
 
     public bool IsRunningExactPath(string executablePath) =>
         FindRunningExactPath(executablePath).Count != 0;
+
+    public IReadOnlyList<int> FindRunning(LaunchEntry entry)
+    {
+        if (entry is null)
+        {
+            return Array.Empty<int>();
+        }
+
+        return entry.LaunchKind switch
+        {
+            LaunchKind.Executable => FindRunningExactPath(entry.ExecutablePath),
+            LaunchKind.ApplicationUserModelId => FindRunningApplicationUserModelId(
+                entry.ApplicationUserModelId),
+            _ => Array.Empty<int>(),
+        };
+    }
+
+    public IReadOnlyList<int> FindRunningApplicationUserModelId(string? applicationUserModelId)
+    {
+        if (string.IsNullOrWhiteSpace(applicationUserModelId))
+        {
+            return Array.Empty<int>();
+        }
+
+        var expected = applicationUserModelId.Trim();
+        var processIds = new List<int>();
+        foreach (var process in Process.GetProcesses())
+        {
+            using (process)
+            {
+                try
+                {
+                    if (_applicationUserModelIdResolver.TryGetForProcess(
+                            process.Id,
+                            out var actualApplicationUserModelId) &&
+                        string.Equals(
+                            expected,
+                            actualApplicationUserModelId,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        processIds.Add(process.Id);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // The process exited between enumeration and identity inspection.
+                }
+            }
+        }
+
+        return processIds.AsReadOnly();
+    }
 
     public IReadOnlyList<int> FindRunningExactPath(string executablePath)
     {

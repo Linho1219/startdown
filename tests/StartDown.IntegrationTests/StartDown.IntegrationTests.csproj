@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\StartDown.Core\StartDown.Core.csproj" />
-    <ProjectReference Include="..\..\src\StartDown\StartDown.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\StartDown\StartDown.csproj" />
     <ProjectReference Include="..\StartDown.WindowFixture\StartDown.WindowFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

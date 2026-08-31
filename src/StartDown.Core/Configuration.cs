@@ -62,7 +62,9 @@ public static class ConfigurationNormalizer
             Id = entry.Id == Guid.Empty ? Guid.NewGuid() : entry.Id,
             Name = entry.Name?.Trim() ?? string.Empty,
             Enabled = entry.Enabled,
+            LaunchKind = entry.LaunchKind,
             ExecutablePath = normalizedExecutablePath,
+            ApplicationUserModelId = NormalizeApplicationUserModelId(entry.ApplicationUserModelId),
             Arguments = NullIfWhiteSpace(entry.Arguments),
             WorkingDirectory = NormalizePath(entry.WorkingDirectory),
             ProcessMatchScope = entry.ProcessMatchScope,
@@ -121,6 +123,9 @@ public static class ConfigurationNormalizer
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static string? NormalizeApplicationUserModelId(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 public static class ConfigurationValidator
@@ -247,7 +252,22 @@ public static class ConfigurationValidator
             AddIssue(issues, entryPath, nameof(LaunchEntry.Name), "Name is required.");
         }
 
-        ValidateAbsolutePath(entry.ExecutablePath, entryPath, nameof(LaunchEntry.ExecutablePath), issues);
+        if (!Enum.IsDefined(entry.LaunchKind))
+        {
+            AddIssue(
+                issues,
+                entryPath,
+                nameof(LaunchEntry.LaunchKind),
+                "Launch kind is not supported.");
+        }
+        else if (entry.LaunchKind == LaunchKind.Executable)
+        {
+            ValidateAbsolutePath(entry.ExecutablePath, entryPath, nameof(LaunchEntry.ExecutablePath), issues);
+        }
+        else
+        {
+            ValidateApplicationUserModelId(entry.ApplicationUserModelId, entryPath, issues);
+        }
 
         if (!string.IsNullOrWhiteSpace(entry.WorkingDirectory))
         {
@@ -378,6 +398,27 @@ public static class ConfigurationValidator
         if (!RuleMatcher.TryNormalizeWindowsPath(path, out _))
         {
             AddIssue(issues, entryPath, propertyName, "A fully qualified Windows path is required.");
+        }
+    }
+
+    private static void ValidateApplicationUserModelId(
+        string? applicationUserModelId,
+        string entryPath,
+        List<ConfigurationValidationIssue> issues)
+    {
+        var value = applicationUserModelId?.Trim();
+        var separator = value?.IndexOf('!') ?? -1;
+        if (string.IsNullOrEmpty(value) ||
+            separator <= 0 ||
+            separator != value.LastIndexOf('!') ||
+            separator == value.Length - 1 ||
+            value.Any(character => char.IsWhiteSpace(character) || char.IsControl(character)))
+        {
+            AddIssue(
+                issues,
+                entryPath,
+                nameof(LaunchEntry.ApplicationUserModelId),
+                "A non-empty application user model ID containing '!' is required.");
         }
     }
 

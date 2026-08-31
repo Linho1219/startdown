@@ -4,6 +4,7 @@ var tests = new (string Name, Action Body)[]
 {
     ("Model defaults", ModelDefaults),
     ("Default scope matches only launch path", DefaultScope),
+    ("Default AUMID scope matches only launch identity", DefaultApplicationUserModelIdScope),
     ("Explicit path is exact and case-insensitive", ExplicitPath),
     ("Directory scope respects path boundaries", DirectoryBoundary),
     ("Title matching modes", TitleMatching),
@@ -11,6 +12,7 @@ var tests = new (string Name, Action Body)[]
     ("Dimension constraints are inclusive and combined", DimensionConstraints),
     ("Default structural window conditions", StructuralConditions),
     ("Configuration normalization and validation", ConfigurationProcessing),
+    ("AUMID configuration normalization and validation", ApplicationUserModelIdConfiguration),
     ("Structural configuration cannot normalize into success", StructuralConfiguration),
 };
 
@@ -45,6 +47,8 @@ static void ModelDefaults()
     Assert.Equal(60, entry.TimeoutSeconds);
     Assert.Equal(1, entry.ExpectedMatches);
     Assert.Equal(250, entry.ActionDelayMilliseconds);
+    Assert.Equal(LaunchKind.Executable, entry.LaunchKind);
+    Assert.Null(entry.ApplicationUserModelId);
     Assert.Equal(ProcessMatchScope.ExactLaunchPath, entry.ProcessMatchScope);
     Assert.Equal(ExistingInstancePolicy.Skip, entry.ExistingInstancePolicy);
     Assert.Equal(WindowAction.Close, entry.Action);
@@ -53,6 +57,30 @@ static void ModelDefaults()
     Assert.True(rule.RequireTopLevel);
     Assert.True(rule.RequireUnowned);
     Assert.True(rule.RequireNotMinimized);
+}
+
+static void DefaultApplicationUserModelIdScope()
+{
+    const string applicationUserModelId = "38833FF26BA1D.UnigramPreview_g9c9v27vpyspw!App";
+    var entry = new LaunchEntry
+    {
+        Name = "Unigram",
+        LaunchKind = LaunchKind.ApplicationUserModelId,
+        ApplicationUserModelId = applicationUserModelId,
+    };
+
+    Assert.True(RuleMatcher.Matches(
+        entry,
+        Snapshot(@"C:\Program Files\WindowsApps\Unigram.exe", applicationUserModelId: applicationUserModelId)));
+    Assert.True(RuleMatcher.Matches(
+        entry,
+        Snapshot(@"C:\Program Files\WindowsApps\Unigram.exe", applicationUserModelId: applicationUserModelId.ToLowerInvariant())));
+    Assert.False(RuleMatcher.Matches(
+        entry,
+        Snapshot(@"C:\Program Files\WindowsApps\Unigram.exe", applicationUserModelId: "Other.Package_family!App")));
+    Assert.False(RuleMatcher.Matches(
+        entry,
+        Snapshot(@"C:\Program Files\WindowsApps\Unigram.exe")));
 }
 
 static void DefaultScope()
@@ -203,6 +231,8 @@ static void ConfigurationProcessing()
     Assert.Equal("Telegram", result.Configuration.Entries[0].Name);
     Assert.NotEqual(Guid.Empty, result.Configuration.Entries[0].Id);
     Assert.Equal(@"C:\Apps\Telegram\Telegram.exe", result.Configuration.Entries[0].ExecutablePath);
+    Assert.Equal(LaunchKind.Executable, result.Configuration.Entries[0].LaunchKind);
+    Assert.Null(result.Configuration.Entries[0].ApplicationUserModelId);
     Assert.Equal(ExistingInstancePolicy.Adopt, result.Configuration.Entries[0].ExistingInstancePolicy);
     Assert.Equal(Guid.Empty, source.Entries[0].Id, "Normalization must not mutate its input.");
 
@@ -216,6 +246,77 @@ static void ConfigurationProcessing()
     Assert.True(issues.Any(issue => issue.Path.EndsWith("ExistingInstancePolicy", StringComparison.Ordinal)));
     Assert.True(issues.Any(issue => issue.Path.EndsWith("TitlePattern", StringComparison.Ordinal)));
     Assert.True(issues.Any(issue => issue.Path.EndsWith("MaxWidth", StringComparison.Ordinal)));
+}
+
+static void ApplicationUserModelIdConfiguration()
+{
+    var source = new AppConfiguration
+    {
+        Entries =
+        [
+            new LaunchEntry
+            {
+                Name = "Unigram",
+                LaunchKind = LaunchKind.ApplicationUserModelId,
+                ApplicationUserModelId = "  38833FF26BA1D.UnigramPreview_g9c9v27vpyspw!App  ",
+                ExecutablePath = string.Empty,
+            },
+        ],
+    };
+
+    var result = ConfigurationValidator.NormalizeAndValidate(source);
+    Assert.True(result.IsValid, string.Join("; ", result.Issues.Select(issue => issue.Message)));
+    Assert.Equal(
+        "38833FF26BA1D.UnigramPreview_g9c9v27vpyspw!App",
+        result.Configuration.Entries[0].ApplicationUserModelId);
+    Assert.Equal(
+        "  38833FF26BA1D.UnigramPreview_g9c9v27vpyspw!App  ",
+        source.Entries[0].ApplicationUserModelId,
+        "Normalization must not mutate its input.");
+
+    var missingId = ConfigurationValidator.NormalizeAndValidate(new AppConfiguration
+    {
+        Entries =
+        [
+            new LaunchEntry
+            {
+                Name = "Missing identity",
+                LaunchKind = LaunchKind.ApplicationUserModelId,
+            },
+        ],
+    });
+    Assert.False(missingId.IsValid);
+    Assert.True(missingId.Issues.Any(issue =>
+        issue.Path.EndsWith(nameof(LaunchEntry.ApplicationUserModelId), StringComparison.Ordinal)));
+
+    var malformedId = ConfigurationValidator.NormalizeAndValidate(new AppConfiguration
+    {
+        Entries =
+        [
+            new LaunchEntry
+            {
+                Name = "Malformed identity",
+                LaunchKind = LaunchKind.ApplicationUserModelId,
+                ApplicationUserModelId = "PackageWithoutApplicationSeparator",
+            },
+        ],
+    });
+    Assert.False(malformedId.IsValid);
+
+    var unsupportedKind = ConfigurationValidator.NormalizeAndValidate(new AppConfiguration
+    {
+        Entries =
+        [
+            new LaunchEntry
+            {
+                Name = "Unsupported launch kind",
+                LaunchKind = (LaunchKind)99,
+            },
+        ],
+    });
+    Assert.False(unsupportedKind.IsValid);
+    Assert.True(unsupportedKind.Issues.Any(issue =>
+        issue.Path.EndsWith(nameof(LaunchEntry.LaunchKind), StringComparison.Ordinal)));
 }
 
 static void StructuralConfiguration()
@@ -253,7 +354,8 @@ static WindowSnapshot Snapshot(
     string executablePath,
     string title = "Main window",
     int width = 1000,
-    int height = 700) => new(
+    int height = 700,
+    string? applicationUserModelId = null) => new(
         Hwnd: (nint)42,
         ProcessId: 1234,
         ExecutablePath: executablePath,
@@ -265,7 +367,8 @@ static WindowSnapshot Snapshot(
         IsTopLevel: true,
         IsOwned: false,
         IsCloaked: false,
-        IsMinimized: false);
+        IsMinimized: false,
+        ApplicationUserModelId: applicationUserModelId);
 
 internal static class Assert
 {

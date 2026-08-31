@@ -30,7 +30,11 @@ public sealed class LaunchEntry
 
     public bool Enabled { get; set; } = true;
 
+    public LaunchKind LaunchKind { get; set; } = LaunchKind.Executable;
+
     public string ExecutablePath { get; set; } = string.Empty;
+
+    public string? ApplicationUserModelId { get; set; }
 
     public string? Arguments { get; set; }
 
@@ -57,9 +61,18 @@ public sealed class LaunchEntry
     public WindowAction Action { get; set; } = WindowAction.Close;
 }
 
+public enum LaunchKind
+{
+    /// <summary>Launch a traditional executable path.</summary>
+    Executable,
+
+    /// <summary>Activate a packaged Windows application by its AUMID.</summary>
+    ApplicationUserModelId,
+}
+
 public enum ProcessMatchScope
 {
-    /// <summary>Match only the executable passed to the launcher.</summary>
+    /// <summary>Match the executable path or AUMID passed to the launcher.</summary>
     ExactLaunchPath,
 
     /// <summary>Match an explicit executable path from <see cref="LaunchEntry.MatchPath"/>.</summary>
@@ -137,4 +150,5 @@ public sealed record WindowSnapshot(
     bool IsTopLevel,
     bool IsOwned,
     bool IsCloaked,
-    bool IsMinimized);
+    bool IsMinimized,
+    string? ApplicationUserModelId = null);

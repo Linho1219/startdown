@@ -1,5 +1,6 @@
 using StartDown.Core;
 using StartDown.Infrastructure;
+using StartDown.Interop;
 using System.Diagnostics;
 
 namespace StartDown.UI;
@@ -27,9 +28,13 @@ internal sealed class ConfigurationForm : Form
     private readonly NumericUpDown _globalTimeout = NumberBox(1, int.MaxValue, 300);
     private readonly CheckBox _enabled = new() { Text = "启用此配置", AutoSize = true };
     private readonly TextBox _name = new();
+    private readonly ComboBox _launchKind = ChoiceBox<LaunchKind>();
     private readonly TextBox _executable = new();
+    private readonly TextBox _applicationUserModelId = new();
     private readonly TextBox _arguments = new();
     private readonly TextBox _workingDirectory = new();
+    private readonly Button _browseExecutable = new() { Text = "浏览…", AutoSize = true };
+    private readonly Button _browseWorkingDirectory = new() { Text = "浏览…", AutoSize = true };
     private readonly ComboBox _processScope = ChoiceBox<ProcessMatchScope>();
     private readonly TextBox _matchPath = new();
     private readonly Button _browseMatchPath = new() { Text = "浏览…", AutoSize = true };
@@ -50,8 +55,8 @@ internal sealed class ConfigurationForm : Form
     private readonly NumericUpDown _actionDelay = NumberBox(0, int.MaxValue, 250, increment: 50);
     private readonly NumericUpDown _entryTimeout = NumberBox(1, int.MaxValue, 60);
     private readonly CheckBox _autostart = new() { Text = "登录 Windows 后自动运行 StartDown", AutoSize = true };
-    private readonly Button _removeButton = new() { Text = "删除", AutoSize = true };
-    private readonly Button _duplicateButton = new() { Text = "复制", AutoSize = true };
+    private readonly Button _removeButton = new() { Text = "删除", Dock = DockStyle.Fill };
+    private readonly Button _duplicateButton = new() { Text = "复制", Dock = DockStyle.Fill };
     private readonly Button _testButton = new() { Text = "测试所选", AutoSize = true };
     private readonly Label _status = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
     private readonly List<Control> _entryOnlyControls = [];
@@ -76,13 +81,17 @@ internal sealed class ConfigurationForm : Form
 
     private void PopulateChoices()
     {
+        SetChoices(_launchKind,
+            new Choice<LaunchKind>(LaunchKind.Executable, "可执行文件"),
+            new Choice<LaunchKind>(LaunchKind.ApplicationUserModelId, "微软商店应用"));
+
         SetChoices(_processScope,
-            new Choice<ProcessMatchScope>(ProcessMatchScope.ExactLaunchPath, "启动程序本身（默认）"),
+            new Choice<ProcessMatchScope>(ProcessMatchScope.ExactLaunchPath, "启动目标本身"),
             new Choice<ProcessMatchScope>(ProcessMatchScope.ExactPath, "指定可执行文件"),
             new Choice<ProcessMatchScope>(ProcessMatchScope.Directory, "指定目录下的程序"));
 
         SetChoices(_existingPolicy,
-            new Choice<ExistingInstancePolicy>(ExistingInstancePolicy.Skip, "已运行则跳过（安全）"),
+            new Choice<ExistingInstancePolicy>(ExistingInstancePolicy.Skip, "已运行则跳过"),
             new Choice<ExistingInstancePolicy>(ExistingInstancePolicy.Adopt, "接管已运行实例"));
 
         SetChoices(_titleMode,
@@ -92,9 +101,9 @@ internal sealed class ConfigurationForm : Form
             new Choice<TitleMatchMode>(TitleMatchMode.Regex, "正则表达式"));
 
         SetChoices(_action,
-            new Choice<WindowAction>(WindowAction.Close, "关闭（模拟点击 X）"),
-            new Choice<WindowAction>(WindowAction.Minimize, "最小化"),
-            new Choice<WindowAction>(WindowAction.Hide, "隐藏"));
+            new Choice<WindowAction>(WindowAction.Close, "关闭窗口"),
+            new Choice<WindowAction>(WindowAction.Minimize, "最小化窗口"),
+            new Choice<WindowAction>(WindowAction.Hide, "隐藏窗口"));
     }
 
     private void BuildLayout()
@@ -123,18 +132,29 @@ internal sealed class ConfigurationForm : Form
         split.Panel1.Controls.Add(_entryList);
         _entryList.BringToFront();
 
-        var leftButtons = new FlowLayoutPanel
+        var leftButtons = new TableLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 44,
+            Height = 150,
             Padding = new Padding(6),
-            FlowDirection = FlowDirection.LeftToRight,
+            ColumnCount = 1,
+            RowCount = 4,
         };
-        var addButton = new Button { Text = "添加", AutoSize = true };
+        leftButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < 4; i++)
+        {
+            leftButtons.RowStyles.Add(
+                new RowStyle(SizeType.Percent, 25));
+        }
+
+        var addButton = new Button { Text = "添加", Dock = DockStyle.Fill };
+        var importShortcutButton = new Button { Text = "导入", Dock = DockStyle.Fill };
+        importShortcutButton.AccessibleDescription = "从 Windows 快捷方式导入";
         addButton.Click += (_, _) => AddEntry();
+        importShortcutButton.Click += (_, _) => ImportShortcut();
         _duplicateButton.Click += (_, _) => DuplicateEntry();
         _removeButton.Click += (_, _) => RemoveEntry();
-        leftButtons.Controls.AddRange([addButton, _duplicateButton, _removeButton]);
+        leftButtons.Controls.AddRange([addButton, importShortcutButton, _duplicateButton, _removeButton]);
         split.Panel1.Controls.Add(leftButtons);
 
         var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
@@ -154,37 +174,37 @@ internal sealed class ConfigurationForm : Form
         scroll.Controls.Add(editor);
 
         AddSection(editor, "全局");
-        AddRow(editor, "总超时（秒）", _globalTimeout);
+        AddRow(editor, "总超时 (s)", _globalTimeout);
 
         AddSection(editor, "程序");
         AddWideRow(editor, _enabled);
         AddRow(editor, "名称", _name);
-        var browseExecutable = new Button { Text = "浏览…", AutoSize = true };
-        _entryOnlyControls.Add(browseExecutable);
-        browseExecutable.Click += (_, _) => BrowseExecutable();
-        AddRow(editor, "启动程序", _executable, browseExecutable);
+        AddRow(editor, "启动类型", _launchKind);
+        _entryOnlyControls.Add(_browseExecutable);
+        _browseExecutable.Click += (_, _) => BrowseExecutable();
+        AddRow(editor, "启动程序", _executable, _browseExecutable);
+        AddRow(editor, "应用 AUMID", _applicationUserModelId);
         AddRow(editor, "命令行参数", _arguments);
-        var browseWorkingDirectory = new Button { Text = "浏览…", AutoSize = true };
-        _entryOnlyControls.Add(browseWorkingDirectory);
-        browseWorkingDirectory.Click += (_, _) => BrowseWorkingDirectory();
-        AddRow(editor, "工作目录", _workingDirectory, browseWorkingDirectory);
+        _entryOnlyControls.Add(_browseWorkingDirectory);
+        _browseWorkingDirectory.Click += (_, _) => BrowseWorkingDirectory();
+        AddRow(editor, "工作目录", _workingDirectory, _browseWorkingDirectory);
         AddRow(editor, "窗口所属程序", _processScope);
         _browseMatchPath.Click += (_, _) => BrowseMatchPath();
         AddRow(editor, "匹配路径/目录", _matchPath, _browseMatchPath);
         AddRow(editor, "程序已在运行", _existingPolicy);
 
-        AddSection(editor, "关闭条件（全部条件同时满足）");
+        AddSection(editor, "关闭条件 (全部条件同时满足)");
         var inspectWindow = new Button { Text = "从当前窗口读取标题、窗口类和程序路径…", AutoSize = true };
         _entryOnlyControls.Add(inspectWindow);
         inspectWindow.Click += (_, _) => InspectWindow();
         AddWideRow(editor, inspectWindow);
         AddRow(editor, "标题匹配", _titleMode);
         AddRow(editor, "标题内容", _titlePattern);
-        AddRow(editor, "窗口类（可选）", _className);
-        AddRow(editor, "最小宽度（-1 不限）", _minWidth);
-        AddRow(editor, "最大宽度（-1 不限）", _maxWidth);
-        AddRow(editor, "最小高度（-1 不限）", _minHeight);
-        AddRow(editor, "最大高度（-1 不限）", _maxHeight);
+        AddRow(editor, "窗口类 (可选)", _className);
+        AddRow(editor, "最小宽度 (-1 不限)", _minWidth);
+        AddRow(editor, "最大宽度 (-1 不限)", _maxWidth);
+        AddRow(editor, "最小高度 (-1 不限)", _minHeight);
+        AddRow(editor, "最大高度 (-1 不限)", _maxHeight);
         AddWideRow(editor, _requireVisible);
         AddWideRow(editor, _requireTopLevel);
         AddWideRow(editor, _requireUnowned);
@@ -193,8 +213,8 @@ internal sealed class ConfigurationForm : Form
         AddSection(editor, "动作与完成条件");
         AddRow(editor, "动作", _action);
         AddRow(editor, "预期处理窗口数", _expectedMatches);
-        AddRow(editor, "窗口出现后延迟（毫秒）", _actionDelay);
-        AddRow(editor, "此项超时（秒）", _entryTimeout);
+        AddRow(editor, "窗口出现后延迟 (ms)", _actionDelay);
+        AddRow(editor, "此项超时 (s)", _entryTimeout);
 
         AddSection(editor, "运行");
         AddWideRow(editor, _autostart);
@@ -223,6 +243,11 @@ internal sealed class ConfigurationForm : Form
     private void WireEvents()
     {
         _entryList.SelectedIndexChanged += (_, _) => ChangeSelection();
+        _launchKind.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateConditionalControls();
+            MarkDirty();
+        };
         _processScope.SelectedIndexChanged += (_, _) =>
         {
             UpdateConditionalControls();
@@ -247,7 +272,11 @@ internal sealed class ConfigurationForm : Form
             MarkDirty();
         };
 
-        foreach (var textBox in new[] { _executable, _arguments, _workingDirectory, _matchPath, _titlePattern, _className })
+        foreach (var textBox in new[]
+                 {
+                     _executable, _applicationUserModelId, _arguments, _workingDirectory,
+                     _matchPath, _titlePattern, _className,
+                 })
         {
             textBox.TextChanged += (_, _) => MarkDirty();
         }
@@ -357,7 +386,9 @@ internal sealed class ConfigurationForm : Form
 
             _enabled.Checked = entry.Enabled;
             _name.Text = entry.Name;
+            SelectChoice(_launchKind, entry.LaunchKind);
             _executable.Text = entry.ExecutablePath;
+            _applicationUserModelId.Text = entry.ApplicationUserModelId ?? string.Empty;
             _arguments.Text = entry.Arguments ?? string.Empty;
             _workingDirectory.Text = entry.WorkingDirectory ?? string.Empty;
             SelectChoice(_processScope, entry.ProcessMatchScope);
@@ -396,7 +427,9 @@ internal sealed class ConfigurationForm : Form
         _configuration.GlobalTimeoutSeconds = Decimal.ToInt32(_globalTimeout.Value);
         _currentEntry.Enabled = _enabled.Checked;
         _currentEntry.Name = _name.Text;
+        _currentEntry.LaunchKind = SelectedChoice(_launchKind, LaunchKind.Executable);
         _currentEntry.ExecutablePath = _executable.Text;
+        _currentEntry.ApplicationUserModelId = EmptyToNull(_applicationUserModelId.Text);
         _currentEntry.Arguments = EmptyToNull(_arguments.Text);
         _currentEntry.WorkingDirectory = EmptyToNull(_workingDirectory.Text);
         _currentEntry.ProcessMatchScope = SelectedChoice(_processScope, ProcessMatchScope.ExactLaunchPath);
@@ -476,9 +509,11 @@ internal sealed class ConfigurationForm : Form
         var source = _currentEntry;
         var copy = new LaunchEntry
         {
-            Name = source.Name + "（副本）",
+            Name = source.Name + " (副本)",
             Enabled = source.Enabled,
+            LaunchKind = source.LaunchKind,
             ExecutablePath = source.ExecutablePath,
+            ApplicationUserModelId = source.ApplicationUserModelId,
             Arguments = source.Arguments,
             WorkingDirectory = source.WorkingDirectory,
             ProcessMatchScope = source.ProcessMatchScope,
@@ -599,6 +634,65 @@ internal sealed class ConfigurationForm : Form
         }
     }
 
+    private void ImportShortcut()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "Windows 快捷方式 (*.lnk)|*.lnk",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            ApplyCurrentEntry();
+            var shortcut = ShortcutResolver.Resolve(dialog.FileName);
+            var entry = new LaunchEntry
+            {
+                Name = Path.GetFileNameWithoutExtension(shortcut.ShortcutPath),
+                Arguments = shortcut.Arguments,
+                ProcessMatchScope = ProcessMatchScope.ExactLaunchPath,
+            };
+
+            if (shortcut.TargetKind == ShortcutTargetKind.Executable)
+            {
+                entry.LaunchKind = LaunchKind.Executable;
+                entry.ExecutablePath = shortcut.ExecutablePath ?? string.Empty;
+                entry.WorkingDirectory = shortcut.WorkingDirectory
+                    ?? Path.GetDirectoryName(entry.ExecutablePath);
+            }
+            else
+            {
+                entry.LaunchKind = LaunchKind.ApplicationUserModelId;
+                entry.ApplicationUserModelId = shortcut.AppUserModelId;
+                entry.ActionDelayMilliseconds = 1_000;
+            }
+
+            _entries.Add(entry);
+            var item = CreateEntryItem(entry);
+            _entryList.Items.Add(item);
+            SelectEntry(item);
+            _dirty = true;
+            _status.Text = shortcut.TargetKind == ShortcutTargetKind.Executable
+                ? $"已从快捷方式导入：{entry.ExecutablePath}"
+                : $"已从快捷方式导入打包应用：{entry.ApplicationUserModelId}。已将动作延迟设为 1 秒以避开启动画面；建议再读取主窗口补充标题或尺寸条件。";
+        }
+        catch (Exception exception)
+        {
+            _logger.Error($"导入快捷方式失败：{exception.Message}");
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "无法导入快捷方式",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
     private void BrowseExecutable()
     {
         using var dialog = new OpenFileDialog
@@ -611,6 +705,7 @@ internal sealed class ConfigurationForm : Form
             return;
         }
 
+        SelectChoice(_launchKind, LaunchKind.Executable);
         _executable.Text = dialog.FileName;
         if (string.IsNullOrWhiteSpace(_name.Text) || _name.Text.StartsWith("程序 ", StringComparison.Ordinal))
         {
@@ -663,8 +758,20 @@ internal sealed class ConfigurationForm : Form
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_executable.Text) && !string.IsNullOrWhiteSpace(snapshot.ExecutablePath))
+        var selectedLaunchKind = SelectedChoice(_launchKind, LaunchKind.Executable);
+        if (!string.IsNullOrWhiteSpace(snapshot.ApplicationUserModelId) &&
+            (selectedLaunchKind == LaunchKind.ApplicationUserModelId || string.IsNullOrWhiteSpace(_executable.Text)))
         {
+            SelectChoice(_launchKind, LaunchKind.ApplicationUserModelId);
+            _applicationUserModelId.Text = snapshot.ApplicationUserModelId;
+            if (string.IsNullOrWhiteSpace(_name.Text) || _name.Text.StartsWith("程序 ", StringComparison.Ordinal))
+            {
+                _name.Text = string.IsNullOrWhiteSpace(snapshot.Title) ? "打包应用" : snapshot.Title;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(_executable.Text) && !string.IsNullOrWhiteSpace(snapshot.ExecutablePath))
+        {
+            SelectChoice(_launchKind, LaunchKind.Executable);
             _executable.Text = snapshot.ExecutablePath;
             _workingDirectory.Text = Path.GetDirectoryName(snapshot.ExecutablePath) ?? string.Empty;
             _name.Text = Path.GetFileNameWithoutExtension(snapshot.ExecutablePath);
@@ -679,13 +786,23 @@ internal sealed class ConfigurationForm : Form
         SelectChoice(_titleMode, string.IsNullOrEmpty(snapshot.Title) ? TitleMatchMode.Any : TitleMatchMode.Exact);
         _titlePattern.Text = snapshot.Title;
         _className.Text = snapshot.ClassName;
-        _status.Text = $"已读取窗口：{snapshot.Width} × {snapshot.Height} 像素；尺寸阈值仍由你决定。";
+        _status.Text = $"已读取窗口：{snapshot.Width} × {snapshot.Height} 像素" +
+                       (string.IsNullOrWhiteSpace(snapshot.ApplicationUserModelId)
+                           ? ""
+                           : $"；AUMID：{snapshot.ApplicationUserModelId}") +
+                       "；尺寸阈值仍由你决定。";
     }
 
     private void UpdateConditionalControls()
     {
         var hasEntry = _currentEntry is not null;
+        var executableLaunch = SelectedChoice(_launchKind, LaunchKind.Executable) == LaunchKind.Executable;
         var scope = SelectedChoice(_processScope, ProcessMatchScope.ExactLaunchPath);
+        _executable.Enabled = hasEntry && executableLaunch;
+        _browseExecutable.Enabled = _executable.Enabled;
+        _workingDirectory.Enabled = hasEntry && executableLaunch;
+        _browseWorkingDirectory.Enabled = _workingDirectory.Enabled;
+        _applicationUserModelId.Enabled = hasEntry && !executableLaunch;
         _matchPath.Enabled = hasEntry && scope != ProcessMatchScope.ExactLaunchPath;
         _browseMatchPath.Enabled = _matchPath.Enabled;
         _titlePattern.Enabled = hasEntry && SelectedChoice(_titleMode, TitleMatchMode.Any) != TitleMatchMode.Any;
@@ -695,7 +812,8 @@ internal sealed class ConfigurationForm : Form
     {
         foreach (var control in new Control[]
         {
-            _enabled, _name, _executable, _arguments, _workingDirectory, _processScope,
+            _enabled, _name, _launchKind, _executable, _applicationUserModelId,
+            _arguments, _workingDirectory, _processScope,
             _matchPath, _browseMatchPath, _existingPolicy, _titleMode, _titlePattern,
             _className, _minWidth, _maxWidth, _minHeight, _maxHeight, _requireVisible,
             _requireTopLevel, _requireUnowned, _requireNotMinimized, _action,
@@ -782,7 +900,7 @@ internal sealed class ConfigurationForm : Form
     private static string EntryKey(Guid id) => id.ToString("D");
 
     private static string DisplayName(string? name) =>
-        string.IsNullOrWhiteSpace(name) ? "（未命名）" : name;
+        string.IsNullOrWhiteSpace(name) ? " (未命名)" : name;
 
     private void MarkDirty()
     {

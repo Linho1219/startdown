@@ -231,14 +231,18 @@ internal sealed class StartupRunner : IDisposable
     private HashSet<Guid> ReconcileExistingProcesses(long now)
     {
         var adopted = new HashSet<Guid>();
-        var processCache = new Dictionary<string, IReadOnlyList<int>>(StringComparer.OrdinalIgnoreCase);
+        var processCache = new Dictionary<(LaunchKind Kind, string Identity), IReadOnlyList<int>>();
 
         foreach (var runtime in _entries.Where(entry => entry.State == EntryRunState.Pending))
         {
-            if (!processCache.TryGetValue(runtime.Entry.ExecutablePath, out var processIds))
+            var identity = runtime.Entry.LaunchKind == LaunchKind.ApplicationUserModelId
+                ? runtime.Entry.ApplicationUserModelId ?? string.Empty
+                : runtime.Entry.ExecutablePath;
+            var cacheKey = (runtime.Entry.LaunchKind, identity.ToUpperInvariant());
+            if (!processCache.TryGetValue(cacheKey, out var processIds))
             {
-                processIds = _processLauncher.FindRunningExactPath(runtime.Entry.ExecutablePath);
-                processCache[runtime.Entry.ExecutablePath] = processIds;
+                processIds = _processLauncher.FindRunning(runtime.Entry);
+                processCache[cacheKey] = processIds;
             }
 
             if (processIds.Count == 0)
@@ -274,10 +278,7 @@ internal sealed class StartupRunner : IDisposable
             runtime.DeadlineTimestamp = AddDuration(now, TimeSpan.FromSeconds(runtime.Entry.TimeoutSeconds));
             PublishStatus(force: true);
 
-            var result = _processLauncher.Launch(
-                runtime.Entry.ExecutablePath,
-                runtime.Entry.Arguments,
-                runtime.Entry.WorkingDirectory);
+            var result = _processLauncher.Launch(runtime.Entry);
 
             if (!result.Succeeded)
             {

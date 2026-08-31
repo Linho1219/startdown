@@ -9,6 +9,8 @@ public sealed class WindowSnapshotProvider
     private const int MaximumWindowTextLength = 32_768;
     private const int ClassNameCapacity = 512;
 
+    private readonly ApplicationUserModelIdResolver _applicationUserModelIdResolver = new();
+
     public WindowSnapshot? Capture(nint hwnd) =>
         TryCapture(hwnd, out var snapshot) ? snapshot : null;
 
@@ -16,7 +18,20 @@ public sealed class WindowSnapshotProvider
     {
         snapshot = null;
 
-        if (hwnd == 0 || !NativeMethods.IsWindow(hwnd))
+        if (hwnd == 0)
+        {
+            return false;
+        }
+
+        // WinEvent can report the child CoreWindow hosted inside an old UWP frame.
+        // Rules and actions must use the user-visible root window instead.
+        var rootWindow = NativeMethods.GetAncestor(hwnd, NativeMethods.GaRoot);
+        if (rootWindow != 0)
+        {
+            hwnd = rootWindow;
+        }
+
+        if (!NativeMethods.IsWindow(hwnd))
         {
             return false;
         }
@@ -28,6 +43,7 @@ public sealed class WindowSnapshotProvider
         }
 
         ProcessImagePath.TryGet(processId, out var executablePath, out _);
+        var applicationUserModelId = _applicationUserModelIdResolver.ResolveWindow(hwnd);
 
         var title = ReadWindowText(hwnd);
         var className = ReadClassName(hwnd);
@@ -63,7 +79,8 @@ public sealed class WindowSnapshotProvider
             IsTopLevel: isTopLevel,
             IsOwned: isOwned,
             IsCloaked: isCloaked,
-            IsMinimized: isMinimized);
+            IsMinimized: isMinimized,
+            ApplicationUserModelId: applicationUserModelId);
 
         return true;
     }

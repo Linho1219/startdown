@@ -18,6 +18,7 @@ StartDown 是一个短生命周期的 Windows 启动编排器：它先开始监�
 
 - WinForms 配置界面，不使用 WebView 或第三方 UI 框架。
 - 默认只匹配被启动 exe；也可显式匹配另一个 exe 或某个目录下的版本化程序。
+- 可从 `.lnk` 快捷方式导入：普通快捷方式会提取 exe、参数和工作目录；UWP/打包应用会提取并持久化 AUMID，不依赖会随更新变化的 WindowsApps 路径。
 - 窗口条件全部使用 AND 组合：
   - 标题任意、包含、完全相同或正则表达式；
   - 窗口类；
@@ -39,6 +40,7 @@ StartDown 是一个短生命周期的 Windows 启动编排器：它先开始监�
 推荐流程：
 
 1. 添加程序并选择启动 exe。
+   - 对 UWP/商店应用，可直接点击左侧“导入…”选择开始菜单或其他位置的 `.lnk` 快捷方式。
 2. 如果稳定启动器会拉起 `bin\vX.X.X\program.exe`，把“窗口所属程序”改为：
    - “指定可执行文件”，适合固定子进程；或
    - “指定目录下的程序”，适合版本号目录。目录模式会匹配该目录的所有子目录，请尽量选择最小范围。
@@ -77,6 +79,8 @@ dotnet publish src/StartDown/StartDown.csproj -c Release -r win-x64 --self-conta
 - “隐藏”不会替应用创建托盘图标。对于需要在 StartDown 退出后继续访问的程序，应优先使用应用自己的 close-to-tray 行为。
 - 普通权限的 StartDown 不能操作管理员权限窗口，日志会记录 Access Denied。StartDown 默认不会整体提权。
 - 进程路径不可读或由宿主进程承载的旧 UWP 窗口可能无法按 exe 精确匹配。
+- 打包应用通过 `IApplicationActivationManager` 按 AUMID 启动；如果快捷方式指向的包已经卸载，导入仍可成功，但测试运行会明确报告启动失败。
+- 旧式 `ApplicationFrameHost` UWP 会尝试从窗口属性、进程身份和子窗口进程恢复 AUMID，这是 best-effort；现代 WinUI 3 打包应用通常可直接识别。
 - 当前监听 `EVENT_OBJECT_SHOW` 与 `EVENT_OBJECT_NAMECHANGE`；窗口显示两秒后才单纯改变尺寸、且不再改变标题的极端情况可能需要放宽条件或增加动作延迟。
 
 ## License

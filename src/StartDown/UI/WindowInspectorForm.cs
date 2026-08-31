@@ -26,6 +26,7 @@ internal sealed class WindowInspectorForm : Form
         _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _grid.AutoGenerateColumns = false;
         _grid.RowHeadersVisible = false;
+        _grid.AllowUserToResizeRows = false;
         _grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             HeaderText = "程序",
@@ -38,6 +39,12 @@ internal sealed class WindowInspectorForm : Form
             DataPropertyName = nameof(WindowRow.Title),
             AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
             MinimumWidth = 180,
+        });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "AUMID",
+            DataPropertyName = nameof(WindowRow.ApplicationUserModelId),
+            Width = 250,
         });
         _grid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -135,6 +142,7 @@ internal sealed class WindowInspectorForm : Form
         public WindowSnapshot Snapshot { get; }
         public string Process => Path.GetFileName(Snapshot.ExecutablePath) ?? string.Empty;
         public string Title => Snapshot.Title;
+        public string ApplicationUserModelId => Snapshot.ApplicationUserModelId ?? string.Empty;
         public string ClassName => Snapshot.ClassName;
         public string Size => $"{Snapshot.Width} × {Snapshot.Height}";
     }

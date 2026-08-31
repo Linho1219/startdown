@@ -1,5 +1,9 @@
 using StartDown.Core;
+using StartDown.Interop;
 using System.Diagnostics;
+using System.Globalization;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -23,6 +27,19 @@ var closedMarker = Path.Combine(temporaryDirectory, "fixture.closed");
 
 try
 {
+    var ordinaryShortcutPath = Path.Combine(temporaryDirectory, "Fixture.lnk");
+    CreateShortcut(
+        ordinaryShortcutPath,
+        fixture,
+        "--fixture-argument value",
+        Path.GetDirectoryName(fixture)!);
+    var shortcut = ShortcutResolver.Resolve(ordinaryShortcutPath);
+    Assert(shortcut.TargetKind == ShortcutTargetKind.Executable, "Ordinary shortcut was not classified as executable.");
+    Assert(string.Equals(shortcut.ExecutablePath, fixture, StringComparison.OrdinalIgnoreCase), "Ordinary shortcut target path was not preserved.");
+    Assert(shortcut.Arguments == "--fixture-argument value", "Ordinary shortcut arguments were not preserved.");
+    Assert(string.Equals(shortcut.WorkingDirectory, Path.GetDirectoryName(fixture), StringComparison.OrdinalIgnoreCase), "Ordinary shortcut working directory was not preserved.");
+    Console.WriteLine("PASS  Ordinary .lnk import preserves target, arguments, and working directory.");
+
     var configuration = new AppConfiguration
     {
         GlobalTimeoutSeconds = 15,
@@ -66,6 +83,34 @@ try
         TimeSpan.FromSeconds(5));
     Assert(fixtureClosed, "The fixture did not process the close request after StartDown completed.");
     Console.WriteLine("PASS  StartDown launched the fixture, matched its window, closed it, and exited.");
+
+    var missingPackagedApp = new AppConfiguration
+    {
+        GlobalTimeoutSeconds = 5,
+        Entries =
+        [
+            new LaunchEntry
+            {
+                Name = "Missing packaged app",
+                LaunchKind = LaunchKind.ApplicationUserModelId,
+                ApplicationUserModelId = "StartDown.NonexistentPackage_0000000000000!App",
+                TimeoutSeconds = 2,
+            },
+        ],
+    };
+    File.WriteAllText(configurationPath, JsonSerializer.Serialize(missingPackagedApp, new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    }));
+    using var missingPackagedAppRun = Process.Start(new ProcessStartInfo(startDown)
+    {
+        UseShellExecute = false,
+        ArgumentList = { "--startup", "--config", configurationPath },
+    }) ?? throw new InvalidOperationException("Could not start the packaged-app activation check.");
+    WaitForExitOrKill(missingPackagedAppRun, 10_000, "Missing packaged-app check");
+    Assert(missingPackagedAppRun.ExitCode == 1, $"Missing packaged app returned {missingPackagedAppRun.ExitCode}, expected 1.");
+    Console.WriteLine("PASS  Missing packaged app activation fails quietly without hanging the runner.");
 
     File.WriteAllText(configurationPath, "{ this is not valid json");
     using var invalidConfigurationRun = Process.Start(new ProcessStartInfo(startDown)
@@ -177,6 +222,56 @@ static void WaitForExitOrKill(Process process, int timeoutMilliseconds, string d
 
     throw new InvalidOperationException($"{description} did not exit before the integration timeout.");
 }
+
+static void CreateShortcut(string shortcutPath, string targetPath, string arguments, string workingDirectory)
+{
+    object? shell = null;
+    object? shortcut = null;
+    try
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)!;
+        shell = Activator.CreateInstance(shellType)
+            ?? throw new InvalidOperationException("Could not create WScript.Shell.");
+        shortcut = shell.GetType().InvokeMember(
+            "CreateShortcut",
+            BindingFlags.InvokeMethod,
+            binder: null,
+            shell,
+            [shortcutPath],
+            CultureInfo.InvariantCulture)
+            ?? throw new InvalidOperationException("Could not create the test shortcut.");
+        SetComProperty(shortcut, "TargetPath", targetPath);
+        SetComProperty(shortcut, "Arguments", arguments);
+        SetComProperty(shortcut, "WorkingDirectory", workingDirectory);
+        shortcut.GetType().InvokeMember(
+            "Save",
+            BindingFlags.InvokeMethod,
+            binder: null,
+            shortcut,
+            args: null,
+            CultureInfo.InvariantCulture);
+    }
+    finally
+    {
+        if (shortcut is not null && Marshal.IsComObject(shortcut))
+        {
+            Marshal.FinalReleaseComObject(shortcut);
+        }
+        if (shell is not null && Marshal.IsComObject(shell))
+        {
+            Marshal.FinalReleaseComObject(shell);
+        }
+    }
+}
+
+static void SetComProperty(object target, string name, object value) =>
+    target.GetType().InvokeMember(
+        name,
+        BindingFlags.SetProperty,
+        binder: null,
+        target,
+        [value],
+        CultureInfo.InvariantCulture);
 
 static void Assert(bool condition, string message)
 {

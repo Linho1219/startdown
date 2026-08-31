@@ -17,22 +17,35 @@ public static class RuleMatcher
     {
         return entry is not null
             && snapshot is not null
-            && MatchesProcess(entry, snapshot.ExecutablePath)
+            && MatchesProcess(entry, snapshot.ExecutablePath, snapshot.ApplicationUserModelId)
             && MatchesWindow(entry.WindowRule, snapshot);
     }
 
-    public static bool MatchesProcess(LaunchEntry? entry, string? executablePath)
+    public static bool MatchesProcess(LaunchEntry? entry, string? executablePath) =>
+        MatchesProcess(entry, executablePath, applicationUserModelId: null);
+
+    public static bool MatchesProcess(
+        LaunchEntry? entry,
+        string? executablePath,
+        string? applicationUserModelId)
     {
-        if (entry is null || !TryNormalizeWindowsPath(executablePath, out var candidatePath))
+        if (entry is null || !Enum.IsDefined(entry.LaunchKind))
         {
             return false;
         }
 
         return entry.ProcessMatchScope switch
         {
-            ProcessMatchScope.ExactLaunchPath => PathsEqual(entry.ExecutablePath, candidatePath),
-            ProcessMatchScope.ExactPath => PathsEqual(entry.MatchPath, candidatePath),
-            ProcessMatchScope.Directory => IsPathInsideDirectory(entry.MatchPath, candidatePath),
+            ProcessMatchScope.ExactLaunchPath => entry.LaunchKind switch
+            {
+                LaunchKind.Executable => MatchesExactPath(entry.ExecutablePath, executablePath),
+                LaunchKind.ApplicationUserModelId => ApplicationUserModelIdsEqual(
+                    entry.ApplicationUserModelId,
+                    applicationUserModelId),
+                _ => false,
+            },
+            ProcessMatchScope.ExactPath => MatchesExactPath(entry.MatchPath, executablePath),
+            ProcessMatchScope.Directory => MatchesDirectory(entry.MatchPath, executablePath),
             _ => false,
         };
     }
@@ -159,6 +172,29 @@ public static class RuleMatcher
                 normalizedConfiguredPath,
                 normalizedCandidate,
                 StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesExactPath(string? configuredPath, string? candidatePath) =>
+        TryNormalizeWindowsPath(candidatePath, out var normalizedCandidate)
+        && PathsEqual(configuredPath, normalizedCandidate);
+
+    private static bool MatchesDirectory(string? configuredDirectory, string? candidatePath) =>
+        TryNormalizeWindowsPath(candidatePath, out var normalizedCandidate)
+        && IsPathInsideDirectory(configuredDirectory, normalizedCandidate);
+
+    private static bool ApplicationUserModelIdsEqual(string? configuredId, string? candidateId)
+    {
+        if (string.IsNullOrWhiteSpace(configuredId) ||
+            string.IsNullOrWhiteSpace(candidateId) ||
+            !configuredId.Contains('!'))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            configuredId.Trim(),
+            candidateId.Trim(),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsPathInsideDirectory(string? configuredDirectory, string normalizedCandidate)
