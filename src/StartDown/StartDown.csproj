@@ -8,7 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>StartDown</AssemblyName>
     <RootNamespace>StartDown</RootNamespace>
+    <Version>0.1.0</Version>
+    <Company>Linho</Company>
+    <Product>StartDown</Product>
+    <Description>登录时启动后台应用并按规则收起其窗口</Description>
+    <Copyright>Copyright (c) 2026 Linho</Copyright>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

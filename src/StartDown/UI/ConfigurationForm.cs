@@ -67,6 +67,10 @@ internal sealed class ConfigurationForm : Form
         _logger = logger;
         _configuration = _store.Load();
 
+        if (ApplicationIconProvider.CreateIcon() is { } applicationIcon)
+        {
+            Icon = applicationIcon;
+        }
         Text = "StartDown";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(980, 680);

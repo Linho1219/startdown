@@ -22,6 +22,10 @@ internal sealed class RunnerStatusForm : Form
         _logger = logger;
         _requestExit = requestExit;
 
+        if (ApplicationIconProvider.CreateIcon() is { } applicationIcon)
+        {
+            Icon = applicationIcon;
+        }
         Text = "StartDown — 测试运行";
         StartPosition = FormStartPosition.CenterScreen;
         Size = new Size(920, 620);

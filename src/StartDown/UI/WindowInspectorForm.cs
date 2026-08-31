@@ -12,6 +12,10 @@ internal sealed class WindowInspectorForm : Form
 
     public WindowInspectorForm()
     {
+        if (ApplicationIconProvider.CreateIcon() is { } applicationIcon)
+        {
+            Icon = applicationIcon;
+        }
         Text = "选择窗口 — StartDown";
         StartPosition = FormStartPosition.CenterParent;
         Size = new Size(980, 560);
