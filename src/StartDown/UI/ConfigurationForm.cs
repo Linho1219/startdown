@@ -124,7 +124,7 @@ internal sealed class ConfigurationForm : Form
 
         var intro = new Label
         {
-            Text = "StartDown 会先监听窗口，再依次启动这些程序。每项达到预期匹配次数后即完成；全部完成或总超时后退出。",
+            Text = "StartDown 将启动程序并监听窗口，满足条件后执行指定动作。",
             Dock = DockStyle.Top,
             AutoSize = false,
             Height = 64,

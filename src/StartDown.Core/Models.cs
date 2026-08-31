@@ -113,11 +113,11 @@ public sealed class WindowRule
 
     public bool RequireVisible { get; set; } = true;
 
-    public bool RequireTopLevel { get; set; } = true;
+    public bool RequireTopLevel { get; set; } = false;
 
-    public bool RequireUnowned { get; set; } = true;
+    public bool RequireUnowned { get; set; } = false;
 
-    public bool RequireNotMinimized { get; set; } = true;
+    public bool RequireNotMinimized { get; set; } = false;
 }
 
 public enum TitleMatchMode
