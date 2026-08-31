@@ -1,6 +1,5 @@
 using StartDown.Core;
 using StartDown.Infrastructure;
-using System.ComponentModel;
 using System.Diagnostics;
 
 namespace StartDown.UI;
@@ -11,12 +10,20 @@ internal sealed class ConfigurationForm : Form
     private readonly AppLogger _logger;
 
     private AppConfiguration _configuration;
-    private BindingList<LaunchEntry> _entries = [];
+    private List<LaunchEntry> _entries = [];
     private LaunchEntry? _currentEntry;
     private bool _loading;
     private bool _dirty;
+    private bool _selectionRestoreScheduled;
 
-    private readonly ListBox _entryList = new();
+    private readonly ListView _entryList = new()
+    {
+        View = View.List,
+        MultiSelect = false,
+        HideSelection = false,
+        FullRowSelect = true,
+        UseCompatibleStateImageBehavior = false,
+    };
     private readonly NumericUpDown _globalTimeout = NumberBox(1, int.MaxValue, 300);
     private readonly CheckBox _enabled = new() { Text = "启用此配置", AutoSize = true };
     private readonly TextBox _name = new();
@@ -113,7 +120,6 @@ internal sealed class ConfigurationForm : Form
         split.Panel1.Controls.Add(intro);
 
         _entryList.Dock = DockStyle.Fill;
-        _entryList.IntegralHeight = false;
         split.Panel1.Controls.Add(_entryList);
         _entryList.BringToFront();
 
@@ -232,10 +238,10 @@ internal sealed class ConfigurationForm : Form
             if (!_loading && _currentEntry is not null)
             {
                 _currentEntry.Name = _name.Text;
-                var index = _entries.IndexOf(_currentEntry);
-                if (index >= 0)
+                var item = _entryList.Items[EntryKey(_currentEntry.Id)];
+                if (item is not null)
                 {
-                    _entries.ResetItem(index);
+                    item.Text = DisplayName(_currentEntry.Name);
                 }
             }
             MarkDirty();
@@ -274,17 +280,33 @@ internal sealed class ConfigurationForm : Form
         _loading = true;
         try
         {
-            _entries = new BindingList<LaunchEntry>(_configuration.Entries);
-            _entryList.DataSource = _entries;
-            _entryList.DisplayMember = nameof(LaunchEntry.Name);
+            _entries = _configuration.Entries;
+            _entryList.BeginUpdate();
+            var index = -1;
+            try
+            {
+                _entryList.Items.Clear();
+                foreach (var entry in _entries)
+                {
+                    _entryList.Items.Add(CreateEntryItem(entry));
+                }
+
+                index = selectedId is null
+                    ? (_entries.Count > 0 ? 0 : -1)
+                    : _entries.FindIndex(entry => entry.Id == selectedId);
+                _currentEntry = index >= 0 ? _entries[index] : null;
+                if (index >= 0)
+                {
+                    _entryList.Items[index].Selected = true;
+                    _entryList.Items[index].Focused = true;
+                }
+            }
+            finally
+            {
+                _entryList.EndUpdate();
+            }
             _globalTimeout.Value = Math.Max(_configuration.GlobalTimeoutSeconds, 1);
             _autostart.Checked = AutostartManager.IsEnabled(_store.FilePath);
-
-            var index = selectedId is null
-                ? (_entries.Count > 0 ? 0 : -1)
-                : _entries.ToList().FindIndex(entry => entry.Id == selectedId);
-            _entryList.SelectedIndex = index;
-            _currentEntry = index >= 0 ? _entries[index] : null;
             LoadEntry(_currentEntry);
         }
         finally
@@ -302,14 +324,27 @@ internal sealed class ConfigurationForm : Form
             return;
         }
 
+        if (_entryList.SelectedItems.Count == 0)
+        {
+            ScheduleSelectionRestore();
+            return;
+        }
+
+        var selectedEntry = _entryList.SelectedItems[0].Tag as LaunchEntry;
+        if (selectedEntry?.Id == _currentEntry?.Id)
+        {
+            return;
+        }
+
         ApplyCurrentEntry();
-        _currentEntry = _entryList.SelectedItem as LaunchEntry;
+        _currentEntry = selectedEntry;
         LoadEntry(_currentEntry);
         UpdateButtons();
     }
 
     private void LoadEntry(LaunchEntry? entry)
     {
+        var previousLoading = _loading;
         _loading = true;
         try
         {
@@ -347,7 +382,7 @@ internal sealed class ConfigurationForm : Form
         }
         finally
         {
-            _loading = false;
+            _loading = previousLoading;
         }
     }
 
@@ -424,10 +459,9 @@ internal sealed class ConfigurationForm : Form
         ApplyCurrentEntry();
         var entry = new LaunchEntry { Name = $"程序 {_entries.Count + 1}" };
         _entries.Add(entry);
-        _entryList.SelectedItem = entry;
-        _currentEntry = entry;
-        LoadEntry(entry);
-        UpdateButtons();
+        var item = CreateEntryItem(entry);
+        _entryList.Items.Add(item);
+        SelectEntry(item);
         _dirty = true;
     }
 
@@ -470,10 +504,9 @@ internal sealed class ConfigurationForm : Form
             }
         };
         _entries.Add(copy);
-        _entryList.SelectedItem = copy;
-        _currentEntry = copy;
-        LoadEntry(copy);
-        UpdateButtons();
+        var item = CreateEntryItem(copy);
+        _entryList.Items.Add(item);
+        SelectEntry(item);
         _dirty = true;
     }
 
@@ -489,8 +522,31 @@ internal sealed class ConfigurationForm : Form
             return;
         }
 
-        _entries.Remove(_currentEntry);
-        _currentEntry = _entryList.SelectedItem as LaunchEntry;
+        var item = _entryList.Items[EntryKey(_currentEntry.Id)];
+        var removedIndex = item?.Index ?? -1;
+        var previousLoading = _loading;
+        _loading = true;
+        try
+        {
+            _entries.Remove(_currentEntry);
+            item?.Remove();
+            var nextIndex = _entryList.Items.Count == 0
+                ? -1
+                : Math.Min(Math.Max(removedIndex, 0), _entryList.Items.Count - 1);
+            if (nextIndex >= 0)
+            {
+                SelectEntry(_entryList.Items[nextIndex]);
+            }
+            else
+            {
+                _currentEntry = null;
+                LoadEntry(null);
+            }
+        }
+        finally
+        {
+            _loading = previousLoading;
+        }
         _dirty = true;
         UpdateButtons();
     }
@@ -662,6 +718,71 @@ internal sealed class ConfigurationForm : Form
         _duplicateButton.Enabled = hasSelection;
         _testButton.Enabled = hasSelection;
     }
+
+    private void SelectEntry(ListViewItem item)
+    {
+        var previousLoading = _loading;
+        _loading = true;
+        try
+        {
+            if (_entryList.SelectedItems.Count > 0 && _entryList.SelectedItems[0] != item)
+            {
+                _entryList.SelectedItems[0].Selected = false;
+            }
+            item.Selected = true;
+            item.Focused = true;
+            item.EnsureVisible();
+            _currentEntry = item.Tag as LaunchEntry;
+            LoadEntry(_currentEntry);
+            UpdateButtons();
+        }
+        finally
+        {
+            _loading = previousLoading;
+        }
+    }
+
+    private void ScheduleSelectionRestore()
+    {
+        if (_selectionRestoreScheduled || !IsHandleCreated || IsDisposed)
+        {
+            return;
+        }
+
+        _selectionRestoreScheduled = true;
+        BeginInvoke(() =>
+        {
+            _selectionRestoreScheduled = false;
+            if (_loading || IsDisposed || _entryList.SelectedItems.Count > 0)
+            {
+                return;
+            }
+
+            var currentItem = _currentEntry is null
+                ? null
+                : _entryList.Items[EntryKey(_currentEntry.Id)];
+            if (currentItem is not null)
+            {
+                SelectEntry(currentItem);
+                return;
+            }
+
+            _currentEntry = null;
+            LoadEntry(null);
+            UpdateButtons();
+        });
+    }
+
+    private static ListViewItem CreateEntryItem(LaunchEntry entry) => new(DisplayName(entry.Name))
+    {
+        Name = EntryKey(entry.Id),
+        Tag = entry,
+    };
+
+    private static string EntryKey(Guid id) => id.ToString("D");
+
+    private static string DisplayName(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "（未命名）" : name;
 
     private void MarkDirty()
     {
