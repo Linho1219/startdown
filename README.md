@@ -1,87 +1,45 @@
+![](./assets/icon.svg)
+
 # StartDown
 
-StartDown 是一个短生命周期的 Windows 启动编排器：它先开始监听窗口，再启动你配置的后台程序；当目标窗口满足条件时，StartDown 自动关闭、最小化或隐藏它。所有配置处理完成，或达到总超时后，StartDown 自行退出。
+许多软件 *本应该* 静默地开机启动，不弹窗直接进托盘。有些软件提供了静默启动选项，有些则没有，或者是静默启动选项不知怎地失效。结果就是每次开机都会弹出一堆窗口，搞半天还要自己关。
 
-它面向这样的场景：QQ、Telegram 等程序需要登录后常驻收消息，但自身的“最小化启动”无效，每次登录都会弹出主窗口。
+StartDown 是一个软件启动工具。其使命很简单：用户配置一些程序，开机时启动这些程序，并在满足条件时自动把弹出的窗口关掉。完成后 StartDown 会自行退出。
+
+StartDown 这个名字来源于 startup 反过来。
 
 ## 工作方式
 
-1. 在目标软件中关闭其原有的开机自启动。
-2. 在 StartDown 中添加目标程序、启动参数和窗口条件。
-3. StartDown 登录后启动，先安装 WinEvent 窗口监听器并补扫已有窗口。
-4. StartDown 启动所有启用的目标程序。
-5. 窗口命中规则后，StartDown 执行动作；所有条目完成或超时后退出。
+你需要做的事：
 
-这种顺序不再依赖 Windows 各类启动项之间没有保证的执行顺序。
+1. 在目标软件中关闭其原有的开机自启动
+2. 在 StartDown 中添加配置
+   - 指定目标程序（支持 exe 文件与微软商店应用），可从快捷方式导入
+   - 配置窗口识别条件，例如标题、窗口类、窗口长宽等
+   - 配置命中动作：关闭、最小化或隐藏
+3. 允许 StartDown 开机启动
 
-## 当前功能
+StartDown 将在开机时：
 
-- WinForms 配置界面，不使用 WebView 或第三方 UI 框架。
-- 默认只匹配被启动 exe；也可显式匹配另一个 exe 或某个目录下的版本化程序。
-- 可从 `.lnk` 快捷方式导入：普通快捷方式会提取 exe、参数和工作目录；UWP/打包应用会提取并持久化 AUMID，不依赖会随更新变化的 WindowsApps 路径。
-- 窗口条件全部使用 AND 组合：
-  - 标题任意、包含、完全相同或正则表达式；
-  - 窗口类；
-  - 最小/最大宽度和高度；
-  - 可见、顶层、无 owner、尚未最小化。
-- 动作：模拟点击关闭按钮、最小化、隐藏。
-- 每项可设置窗口出现后的动作延迟、预期处理数量和独立超时。
-- 全局硬超时，默认 300 秒。
-- 目标已经运行时可安全跳过，或显式接管已有实例。
-- “从当前窗口读取”工具，可读取程序路径、标题、窗口类和当前尺寸。
-- “测试所选”和“运行全部”状态窗；真实开机模式无主窗口、无任务栏按钮。
-- 当前用户自启动开关，写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
-- 配置和日志默认位于 `%LOCALAPPDATA%\StartDown`。
+1. 监听现有和新增的窗口
+2. 启动所有目标程序
+3. 窗口命中规则后将其关闭
+4. 完成所有配置，或达到总超时后自行退出
 
-## 使用
+关闭窗口动作等效于用户关闭窗口。关闭后是否常驻并显示托盘图标，取决于目标软件自身的行为。
 
-直接运行 `StartDown.exe` 打开配置界面。
+## 安装
 
-推荐流程：
+在 [仓库 release 页面](https://github.com/Linho1219/startdown/releases) 下载安装包。
 
-1. 添加程序并选择启动 exe。
-   - 对 UWP/商店应用，可直接点击左侧“导入…”选择开始菜单或其他位置的 `.lnk` 快捷方式。
-2. 如果稳定启动器会拉起 `bin\vX.X.X\program.exe`，把“窗口所属程序”改为：
-   - “指定可执行文件”，适合固定子进程；或
-   - “指定目录下的程序”，适合版本号目录。目录模式会匹配该目录的所有子目录，请尽量选择最小范围。
-3. 先打开一次目标窗口，用“从当前窗口读取”填入标题与窗口类。
-4. 按需设置尺寸下限，避免误关同一程序的小对话框。
-5. 使用“测试所选”验证点击 X 后目标程序仍在自己的托盘中。
-6. 确认目标软件自己的自启动已关闭，再启用 StartDown 自启动。
+安装包提供两个版本：
 
-## 命令行
-
-```text
-StartDown.exe                         打开配置界面
-StartDown.exe --run                   静默运行所有启用项
-StartDown.exe --startup               登录自启动模式（静默）
-StartDown.exe --run --show-status     运行并显示状态窗
-StartDown.exe --run --entry <GUID>    只运行指定条目
-StartDown.exe --config <path>         使用指定配置文件
-```
-
-## 安装与卸载
-
-每次发布会生成两种当前用户、免管理员的 win-x64 安装包：
-
-- `self-contained`：内含 .NET 10，安装包约 36 MiB，适合普通用户和离线安装；
-- `framework-dependent`：安装包约 3 MiB，要求目标机已经安装 x64 Microsoft .NET Desktop Runtime 10；安装器会在安装前检查，缺失时提示改用 self-contained 包。
-
-两种包使用相同 AppId 和安装目录，可以相互覆盖升级；安装器会先清理受控的应用载荷子目录，避免从 self-contained 切换到 framework-dependent 后残留旧运行时文件。
-
-共同安装行为：
-
-- 安装到 `%LOCALAPPDATA%\Programs\StartDown`；
-- 创建开始菜单快捷方式，可选创建桌面快捷方式；
-- 安装本身不会擅自开启 StartDown 自启动；
-- 卸载时，如果 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\StartDown` 确实指向本安装目录，卸载器会删除它；指向另一份 portable StartDown 时会保留；
-- 卸载默认保留 `%LOCALAPPDATA%\StartDown` 中的规则配置和日志，便于重装恢复。
-
-当前安装包尚未进行代码签名，Windows 可能显示“未知发布者”。
+- `framework-dependent`：需要电脑安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0)，约 3 MB
+- `self-contained`：内含运行时，约 36 MB
 
 ## 构建与测试
 
-需要 .NET 10 SDK 和 Windows Desktop Runtime：
+需要 .NET 10 SDK 和 Windows Desktop Runtime 和 Inno Setup 7。
 
 ```powershell
 dotnet build StartDown.slnx
@@ -89,23 +47,11 @@ dotnet run --project tests/StartDown.Core.Tests/StartDown.Core.Tests.csproj --no
 dotnet run --project tests/StartDown.IntegrationTests/StartDown.IntegrationTests.csproj --no-build
 dotnet publish src/StartDown/StartDown.csproj -c Release -r win-x64 --self-contained false -o artifacts/StartDown
 
-# 需要 Inno Setup 7；同时生成 self-contained 和 framework-dependent 安装包
+# 打包 self-contained + framework-dependent 两个安装包
 pwsh scripts/build-installer.ps1
 ```
 
-安装包输出到 `artifacts/installer`。构建脚本会分别发布两种多文件版本，再由 Inno Setup 使用 LZMA2 solid 压缩。
-
-核心测试不操作桌面。端到端测试会启动仓库内的 `StartDown.WindowFixture` 假窗口，验证 StartDown 能启动它、匹配并关闭窗口，然后自行退出；需在交互式 Windows 桌面运行。
-
-## 已知边界
-
-- “关闭”通过 `WM_SYSCOMMAND / SC_CLOSE` 模拟窗口关闭按钮。消息成功投递不代表目标应用一定会服从；应用也可能选择退出、进入托盘、弹确认框或忽略。
-- “隐藏”不会替应用创建托盘图标。对于需要在 StartDown 退出后继续访问的程序，应优先使用应用自己的 close-to-tray 行为。
-- 普通权限的 StartDown 不能操作管理员权限窗口，日志会记录 Access Denied。StartDown 默认不会整体提权。
-- 进程路径不可读或由宿主进程承载的旧 UWP 窗口可能无法按 exe 精确匹配。
-- 打包应用通过 `IApplicationActivationManager` 按 AUMID 启动；如果快捷方式指向的包已经卸载，导入仍可成功，但测试运行会明确报告启动失败。
-- 旧式 `ApplicationFrameHost` UWP 会尝试从窗口属性、进程身份和子窗口进程恢复 AUMID，这是 best-effort；现代 WinUI 3 打包应用通常可直接识别。
-- 当前监听 `EVENT_OBJECT_SHOW` 与 `EVENT_OBJECT_NAMECHANGE`；窗口显示两秒后才单纯改变尺寸、且不再改变标题的极端情况可能需要放宽条件或增加动作延迟。
+安装包输出到 `artifacts/installer`。
 
 ## License
 
