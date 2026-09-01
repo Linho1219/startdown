@@ -11,9 +11,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         ApplicationConfiguration.Initialize();
         Application.SetColorMode(SystemColorMode.System);
-        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
         using var logger = new AppLogger();
         Application.ThreadException += (_, eventArgs) =>
