@@ -54,9 +54,9 @@ static void ModelDefaults()
     Assert.Equal(WindowAction.Close, entry.Action);
     Assert.Equal(TitleMatchMode.Any, rule.TitleMatch);
     Assert.True(rule.RequireVisible);
-    Assert.True(rule.RequireTopLevel);
-    Assert.True(rule.RequireUnowned);
-    Assert.True(rule.RequireNotMinimized);
+    Assert.False(rule.RequireTopLevel);
+    Assert.False(rule.RequireUnowned);
+    Assert.False(rule.RequireNotMinimized);
 }
 
 static void DefaultApplicationUserModelIdScope()
@@ -181,9 +181,19 @@ static void StructuralConditions()
     Assert.True(RuleMatcher.MatchesWindow(rule, ordinary));
     Assert.False(RuleMatcher.MatchesWindow(rule, ordinary with { IsVisible = false }));
     Assert.False(RuleMatcher.MatchesWindow(rule, ordinary with { IsCloaked = true }));
-    Assert.False(RuleMatcher.MatchesWindow(rule, ordinary with { IsTopLevel = false }));
-    Assert.False(RuleMatcher.MatchesWindow(rule, ordinary with { IsOwned = true }));
-    Assert.False(RuleMatcher.MatchesWindow(rule, ordinary with { IsMinimized = true }));
+    Assert.True(RuleMatcher.MatchesWindow(rule, ordinary with { IsTopLevel = false }));
+    Assert.True(RuleMatcher.MatchesWindow(rule, ordinary with { IsOwned = true }));
+    Assert.True(RuleMatcher.MatchesWindow(rule, ordinary with { IsMinimized = true }));
+
+    var structural = new WindowRule
+    {
+        RequireTopLevel = true,
+        RequireUnowned = true,
+        RequireNotMinimized = true,
+    };
+    Assert.False(RuleMatcher.MatchesWindow(structural, ordinary with { IsTopLevel = false }));
+    Assert.False(RuleMatcher.MatchesWindow(structural, ordinary with { IsOwned = true }));
+    Assert.False(RuleMatcher.MatchesWindow(structural, ordinary with { IsMinimized = true }));
 
     var permissive = new WindowRule
     {

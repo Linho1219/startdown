@@ -60,6 +60,25 @@ StartDown.exe --run --entry <GUID>    只运行指定条目
 StartDown.exe --config <path>         使用指定配置文件
 ```
 
+## 安装与卸载
+
+每次发布会生成两种当前用户、免管理员的 win-x64 安装包：
+
+- `self-contained`：内含 .NET 10，安装包约 36 MiB，适合普通用户和离线安装；
+- `framework-dependent`：安装包约 3 MiB，要求目标机已经安装 x64 Microsoft .NET Desktop Runtime 10；安装器会在安装前检查，缺失时提示改用 self-contained 包。
+
+两种包使用相同 AppId 和安装目录，可以相互覆盖升级；安装器会先清理受控的应用载荷子目录，避免从 self-contained 切换到 framework-dependent 后残留旧运行时文件。
+
+共同安装行为：
+
+- 安装到 `%LOCALAPPDATA%\Programs\StartDown`；
+- 创建开始菜单快捷方式，可选创建桌面快捷方式；
+- 安装本身不会擅自开启 StartDown 自启动；
+- 卸载时，如果 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\StartDown` 确实指向本安装目录，卸载器会删除它；指向另一份 portable StartDown 时会保留；
+- 卸载默认保留 `%LOCALAPPDATA%\StartDown` 中的规则配置和日志，便于重装恢复。
+
+当前安装包尚未进行代码签名，Windows 可能显示“未知发布者”。
+
 ## 构建与测试
 
 需要 .NET 10 SDK 和 Windows Desktop Runtime：
@@ -69,7 +88,12 @@ dotnet build StartDown.slnx
 dotnet run --project tests/StartDown.Core.Tests/StartDown.Core.Tests.csproj --no-build
 dotnet run --project tests/StartDown.IntegrationTests/StartDown.IntegrationTests.csproj --no-build
 dotnet publish src/StartDown/StartDown.csproj -c Release -r win-x64 --self-contained false -o artifacts/StartDown
+
+# 需要 Inno Setup 7；同时生成 self-contained 和 framework-dependent 安装包
+pwsh scripts/build-installer.ps1
 ```
+
+安装包输出到 `artifacts/installer`。构建脚本会分别发布两种多文件版本，再由 Inno Setup 使用 LZMA2 solid 压缩。
 
 核心测试不操作桌面。端到端测试会启动仓库内的 `StartDown.WindowFixture` 假窗口，验证 StartDown 能启动它、匹配并关闭窗口，然后自行退出；需在交互式 Windows 桌面运行。
 
