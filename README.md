@@ -37,6 +37,12 @@ StartDown 将在开机时：
 - `framework-dependent`：需要电脑安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0)，约 3 MB
 - `self-contained`：内含运行时，约 36 MB
 
+## 截图
+
+![](./assets/screenshot1.jpg)
+
+![](./assets/screenshot2.jpg)
+
 ## 构建与测试
 
 需要 .NET 10 SDK 和 Windows Desktop Runtime 和 Inno Setup 7。
