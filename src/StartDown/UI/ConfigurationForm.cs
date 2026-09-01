@@ -55,8 +55,8 @@ internal sealed class ConfigurationForm : Form
     private readonly NumericUpDown _actionDelay = NumberBox(0, int.MaxValue, 250, increment: 50);
     private readonly NumericUpDown _entryTimeout = NumberBox(1, int.MaxValue, 60);
     private readonly CheckBox _autostart = new() { Text = "登录 Windows 后自动运行 StartDown", AutoSize = true };
-    private readonly Button _removeButton = new() { Text = "删除", Dock = DockStyle.Fill };
-    private readonly Button _duplicateButton = new() { Text = "复制", Dock = DockStyle.Fill };
+    private readonly Button _removeButton = new() { Text = "删除配置", Dock = DockStyle.Fill };
+    private readonly Button _duplicateButton = new() { Text = "创建副本", Dock = DockStyle.Fill };
     private readonly Button _testButton = new() { Text = "测试所选", AutoSize = true };
     private readonly Label _status = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
     private readonly List<Control> _entryOnlyControls = [];
@@ -124,11 +124,12 @@ internal sealed class ConfigurationForm : Form
 
         var intro = new Label
         {
-            Text = "StartDown 将启动程序并监听窗口，满足条件后执行指定动作。",
+            Text = "配置列表",
             Dock = DockStyle.Top,
             AutoSize = false,
-            Height = 64,
-            Padding = new Padding(10),
+            Height = 40,
+            Font = new Font(SystemFonts.MessageBoxFont ?? Control.DefaultFont, FontStyle.Bold),
+            Padding = new Padding(5, 10, 10, 10),
         };
         split.Panel1.Controls.Add(intro);
 
@@ -151,8 +152,8 @@ internal sealed class ConfigurationForm : Form
                 new RowStyle(SizeType.Percent, 25));
         }
 
-        var addButton = new Button { Text = "添加", Dock = DockStyle.Fill };
-        var importShortcutButton = new Button { Text = "导入", Dock = DockStyle.Fill };
+        var addButton = new Button { Text = "添加配置", Dock = DockStyle.Fill };
+        var importShortcutButton = new Button { Text = "从快捷方式导入", Dock = DockStyle.Fill };
         importShortcutButton.AccessibleDescription = "从 Windows 快捷方式导入";
         addButton.Click += (_, _) => AddEntry();
         importShortcutButton.Click += (_, _) => ImportShortcut();
